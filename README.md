@@ -1,6 +1,6 @@
 # Characteristics and trends of Australian climate-change policies
 
-<img align="right" src="www/fallow-cutout-greyscale.png" alt="fallow deer (<em>Dama dama</em>)" width="130" style="margin-top: 20px">
+<img align="right" src="www/climchangepolicy.jpg" alt="climate change" width="130" style="margin-top: 20px">
 
 <br>
 Prof <a href="https://globalecologyflinders.com/people/#DIRECTOR">Corey J. A. Bradshaw</a> <br>
