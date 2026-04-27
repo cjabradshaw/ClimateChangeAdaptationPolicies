@@ -8,7 +8,6 @@ Prof <a href="https://globalecologyflinders.com/people/#DIRECTOR">Corey J. A. Br
 April 2026 <br>
 <a href=mailto:corey.bradshaw@flinders.edu.au>e-mail</a> <br>
 <br>
-<br>
 Maddy King
 <a href="http://flinders.edu.au" target="_blank">Flinders University</a>, Adelaide, Australia <br>
 <br>
