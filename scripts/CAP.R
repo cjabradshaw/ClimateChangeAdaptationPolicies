@@ -9,7 +9,7 @@ library(ggpubr)
 library(ggrepel)
 
 # import data
-setwd("~/Documents/Students/King")
+setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/data/")
 
 ## read comma-delimited text file
 data <- read.table("CAPdat.csv", header=TRUE, sep=",", dec=".", strip.white=TRUE, quote="\"")
