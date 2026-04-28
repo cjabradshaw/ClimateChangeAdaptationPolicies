@@ -38,7 +38,7 @@ data$pol_LEFT <- data$Political_Party_Labor
 data$pol_RIGHT <- ifelse(data$Political_Party_Coalition | data$Political_Party_Liberal, 1, 0)
 
 ## plot proportion of records with left or right political affiliation by state
-sum_pol <- sum(dat$pol_LEFT, na.rm=TRUE) + sum(data$pol_RIGHT, na.rm=TRUE)
+sum_pol <- sum(data$pol_LEFT, na.rm=TRUE) + sum(data$pol_RIGHT, na.rm=TRUE)
 state_num <- data %>%
   group_by(legbodyCODE) %>%
   summarise(n_LEFT = sum(pol_LEFT, na.rm=TRUE),
