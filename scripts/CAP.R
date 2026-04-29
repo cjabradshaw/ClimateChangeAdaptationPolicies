@@ -11,10 +11,44 @@ library(lubridate)
 library(ozmaps)
 library(purrr)
 library(rnaturalearth)
+library(scales)
 library(sf)
 library(terra)
 library(tidyr)
 library(viridis)
+library(units)
+
+# functions
+AICc <- function(...) {
+  models <- list(...)
+  num.mod <- length(models)
+  AICcs <- numeric(num.mod)
+  ns <- numeric(num.mod)
+  ks <- numeric(num.mod)
+  AICc.vec <- rep(0,num.mod)
+  for (i in 1:num.mod) {
+    if (length(models[[i]]$df.residual) == 0) n <- models[[i]]$dims$N else n <- length(models[[i]]$residuals)
+    if (length(models[[i]]$df.residual) == 0) k <- sum(models[[i]]$dims$ncol) else k <- (length(models[[i]]$coeff))+1
+    AICcs[i] <- (-2*logLik(models[[i]])) + ((2*k*n)/(n-k-1))
+    ns[i] <- n
+    ks[i] <- k
+    AICc.vec[i] <- AICcs[i]
+  }
+  return(AICc.vec)
+}
+
+delta.AIC <- function(x) x - min(x) ## where x is a vector of AIC
+weight.AIC <- function(x) (exp(-0.5*x))/sum(exp(-0.5*x)) ## Where x is a vector of dAIC
+ch.dev <- function(x) ((( as.numeric(x$null.deviance) - as.numeric(x$deviance) )/ as.numeric(x$null.deviance))*100) ## % change in deviance, where x is glm object
+
+linreg.ER <- function(x,y) { # where x and y are vectors of the same length; calls AICc, delta.AIC, weight.AIC functions
+  fit.full <- lm(y ~ x); fit.null <- lm(y ~ 1)
+  AIC.vec <- c(AICc(fit.full),AICc(fit.null))
+  dAIC.vec <- delta.AIC(AIC.vec); wAIC.vec <- weight.AIC(dAIC.vec)
+  ER <- wAIC.vec[1]/wAIC.vec[2]
+  r.sq.adj <- as.numeric(summary(fit.full)[9])
+  return(c(ER,r.sq.adj))
+}
 
 # import policy data
 setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/data/")
@@ -757,9 +791,11 @@ table(state_df$state)
 state_df
 
 ## plot time series of annual mean temperature by state
-ggplot()
-
-
+ggplot(state_df, aes(x = year, y = tmean, color = state)) +
+  geom_line() +
+  labs(x = "year", y = "annual mean temperature (°C)", color = "state/territory") +
+  theme_minimal() +
+  theme(legend.position = "top")
 
 ## baseline for temperature anomalies
 baseline_state <- state_df %>%
@@ -775,39 +811,192 @@ anomalies_state <- state_df %>%
   left_join(baseline_state, by = "state") %>%
   mutate(anomaly = tmean - baseline)
 
-## calculate anomalies by SA4 region
-## load SA4 boundaries
-sa4 <- ozmaps::abs_ced.sa4 %>%
-  st_transform(crs = crs(tmean_annual))
+## remove 'other' category from 'anomalies_state'
+anomalies_state <- subset(anomalies_state, state != "other")
 
-## convert for terra
-sa4_v <- vect(sa4)
+## plot time series of temperature anomalies by state
+ggplot(anomalies_state, aes(x = year, y = anomaly, color = state)) +
+  geom_line() +
+  labs(x = "year", y = "temperature anomaly (°C)", color = "state/territory") +
+  theme_minimal() +
+  theme(legend.position = "top")
 
-## area-weighted extraction by SA4
-sa4_means <- terra::extract(
-  tmean_annual,
-  sa4_v,
-  fun     = mean,
-  weights = TRUE,
-  na.rm  = TRUE
+## create map of temperature anomalies by state for most recent year (2025)
+# filter anomalies for 2025
+state_2025 <- anomalies_state %>%
+  filter(year == 2025) %>%
+  select(state, anomaly)
+
+# join to state geometries
+# NOTE: adjust the join key if your state name column differs
+names(states_sf)
+unique(state_2025$state)
+state_name_col <- grep("NAME", names(states_sf), value = TRUE)[1]
+unique(states_sf[[state_name_col]])
+
+## create lookup table for join
+state_lookup <- tibble::tibble(
+  state = c("NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"),
+  name  = c(
+    "New South Wales",
+    "Victoria",
+    "Queensland",
+    "South Australia",
+    "Western Australia",
+    "Tasmania",
+    "Northern Territory",
+    "Australian Capital Territory"
+  )
 )
 
+state_2025_fixed <- state_2025 %>%
+  left_join(state_lookup, by = "state")
+
+map_sf <- states_sf %>%
+  left_join(
+    state_2025_fixed,
+    by = setNames("name", state_name_col)
+  )
+
+summary(map_sf$anomaly)
+str(map_sf$anomaly)
+map_sf$anomaly <- as.numeric(map_sf$anomaly)
+
+ggplot(map_sf) +
+  geom_sf(aes(fill = anomaly), colour = "black") +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_minimal()
+
+map_sf_ae <- st_transform(map_sf, 3577)
+state_2025_limits <- c(min(map_sf_ae$anomaly, na.rm = TRUE),
+                          max(map_sf_ae$anomaly, na.rm = TRUE))
+
+ggplot(map_sf_ae) +
+  geom_sf(aes(fill = anomaly), colour = "grey30", linewidth = 0.2) +
+    scale_fill_gradient2(
+    name     = "2025 anomaly (°C)",
+    low      = "#2C7BB6",
+    mid      = "white",
+    high     = "#D7191C",
+    midpoint = 0,
+    limits   = state_2025_limits,
+    oob      = squish
+  ) +
+  coord_sf(crs = 3577) +
+  labs(
+    caption  = "source: SILO (BoM-derived)"
+  ) +
+  theme_minimal()
+
+
+## calculate anomalies by SA4 region
+## download shapefile from ABS: https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3/jul2021-jun2026/access-and-downloads/digital-boundary-files/SA4_2021_AUST_SHP_GDA2020.zip
+
+## load SA4 boundaries
+setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/data/")
+
+## sf object
+sa4_sf <- st_read(
+  "shapefiles/SA4_2021_AUST_SHP_GDA2020/SA4_2021_AUST_GDA2020.shp",
+  quiet = TRUE
+)
+st_crs(sa4_sf)
+
+## clean
+sa4_sf_clean <- sa4_sf |>
+  select(
+    code = SA4_CODE21,
+    name = SA4_NAME21,
+    geometry
+  ) |>
+  st_make_valid() |>
+  st_zm(drop = TRUE)
+
+## Albers projection
+sa4_sf_albers <- st_transform(sa4_sf_clean, albers_wkt)
+
+sa4_sf_albers_fixed <- st_sf(
+  data.frame(
+    code = sa4_sf_albers$code,
+    name = sa4_sf_albers$name
+  ),
+  geometry = st_geometry(sa4_sf_albers)
+)
+stopifnot(
+  nrow(sa4_sf_albers_fixed) == length(st_geometry(sa4_sf_albers_fixed))
+)
+
+## dissolve
+sa4_sf_albers_dissolved <- sa4_sf_albers |>
+  group_by(code, name) |>
+  summarise(geometry = st_union(geometry), .groups = "drop")
+
+## sanity check
+stopifnot(
+  nrow(sa4_sf_albers_dissolved) == length(st_geometry(sa4_sf_albers_dissolved))
+)
+
+## check
+st_is_valid(sa4_sf_albers_dissolved)
+# should be all TRUE
+
+exists("sa4_sf_albers_dissolved")
+# should return TRUE
+
+## remove empty geometries if any
+which(sf::st_is_empty(sa4_sf_albers_dissolved))
+sa4_sf_albers_clean <- sa4_sf_albers_dissolved |>
+  filter(!st_is_empty(geometry))
+
+## convert to sp
+sa4_sp <- as(sa4_sf_albers_clean, "Spatial")
+
+## convert for terra
+sa4_v  <- vect(sa4_sp)
+sa4_v  <- makeValid(sa4_v)
+
+## sanity check
+nrow(sa4_v)        # ~90 SA4s
+length(sa4_v$name)
+
+## area-weighted extraction by SA4
+sa4_means <- suppressWarnings(
+  terra::extract(
+    tmean_annual_aea,
+    sa4_v,
+    fun     = mean,
+    weights = TRUE,
+    na.rm   = TRUE,
+    ID      = TRUE
+  )
+)
+summary(sa4_means[ , -1])
+names(sa4_means)[1:10]
+
 # long format
+names(sa4_v)
+sa4_v$ID
+
 sa4_df <- sa4_means %>%
-  mutate(
-    sa4_code = sa4$SA4_CODE21,
-    sa4_name = sa4$SA4_NAME21,
-    state    = sa4$STATE_CODE21
+  rename(poly_id = ID) %>%
+  left_join(
+    data.frame(
+      poly_id = seq_len(nrow(sa4_v)),
+      sa4_code = sa4_v$code,
+      sa4_name = sa4_v$name
+    ),
+    by = "poly_id"
   ) %>%
   tidyr::pivot_longer(
-    cols = starts_with("lyr"),
-    names_to  = "layer",
+    cols = tidyselect::matches("^X\\d{4}$"),
+    names_to  = "year",
     values_to = "tmean"
   ) %>%
   mutate(
-    year = as.integer(sub("lyr.", "", layer))
+    year = as.integer(sub("^X", "", year))
   ) %>%
-  select(sa4_code, sa4_name, state, year, tmean)
+  select(sa4_code, sa4_name, year, tmean)
+
 
 ## baseline
 baseline_sa4 <- sa4_df %>%
@@ -822,3 +1011,796 @@ baseline_sa4 <- sa4_df %>%
 anomalies_sa4 <- sa4_df %>%
   left_join(baseline_sa4, by = "sa4_code") %>%
   mutate(anomaly = tmean - baseline)
+
+summary(anomalies_sa4$anomaly)
+
+## plot an example time series
+## find Adelaide Hills in sa4_name
+anomalies_sa4
+grep("Adelaide", anomalies_sa4$sa4_name, value = TRUE)
+
+one_sa4 <- anomalies_sa4 %>%
+  filter(sa4_name == "Adelaide - Central and Hills")
+
+ggplot(one_sa4, aes(x = year, y = anomaly)) +
+  geom_hline(yintercept = 0, colour = "grey50") +
+  geom_line(linewidth = 0.9, colour = "#2C7BB6") +
+  labs(
+    title = "temperature anomalies — Adelaide (Central & Hills)",
+    subtitle = "1900–1950 baseline",
+    x = "year",
+    y = "anomaly (°C)"
+  ) +
+  theme_minimal(base_size = 12)
+
+## plot time series for all South Australia SA4s
+SA_SA4_anomalies <- anomalies_sa4[which(anomalies_sa4$sa4_code > 400 & anomalies_sa4$sa4_code < 500),]
+
+ggplot(SA_SA4_anomalies, aes(x = year, y = anomaly)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(colour = "#D7191C", linewidth = 0.5) +
+  facet_wrap(~ sa4_name, scales = "free_y") +
+  labs(
+    title = "SA4 temperature anomalies — South Australia",
+    subtitle = "1900-1950 baseline",
+    x = "year",
+    y = "anomaly (°C)"
+  ) +
+  theme_minimal(base_size = 10)
+
+## create map of 2025 anomalies by SA4
+sa4_2025 <- anomalies_sa4 %>%
+  filter(year == 2025) %>%
+  select(sa4_code, sa4_name, anomaly)
+summary(sa4_2025$anomaly)
+names(sa4_sf_albers_dissolved)
+
+map_sa4 <- sa4_sf_albers_dissolved %>%
+  left_join(
+    sa4_2025,
+    by = c("code" = "sa4_code")
+  )
+sum(!is.na(map_sa4$anomaly))
+summary(sa4_2025$anomaly)
+sa4_2025_limits <- as.numeric(c(summary(sa4_2025$anomaly)[1], summary(sa4_2025$anomaly)[6]))
+
+ggplot(map_sa4) +
+  geom_sf(aes(fill = anomaly), colour = NA) +
+  scale_fill_gradient2(
+    name     = "2025 anomaly (°C)",
+    low      = "#2C7BB6",
+    mid      = "white",
+    high     = "#D7191C",
+    midpoint = 0,
+    limits   = sa4_2025_limits,
+    oob      = squish
+  ) +
+  coord_sf(crs = 3577) +
+  labs(
+    caption  = "source: SILO (BoM-derived)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major = element_blank(),
+    legend.position  = "right"
+  )
+
+
+################################################################
+## split record time series (data_years) by state (legbodyCODE)
+colnames(data_years)
+table(data_years$legbodyCODE)
+str(data_years)
+
+data_yearsXstate <- data_years %>%
+  group_split(legbodyCODE, .keep = TRUE) %>%
+  setNames(sort(unique(data_years$legbodyCODE)))
+
+
+## count number of records per year per state
+state_year_sum <- data_years %>%
+                    count(legbodyCODE, year, name = "n")
+
+ggplot(state_year_sum,
+       aes(x = year, y = n, colour = legbodyCODE)) +
+  geom_line() +
+  labs(
+    x = "year",
+    y = "number of records"
+  ) +
+  theme_minimal()
+
+## plot number of records time series with state-specific temperature anomalies
+## SA
+head(anomalies_state)
+SA_anom <- 
+  anomalies_state %>%
+  filter(state == "SA") %>%
+  select(year, anomaly)
+head(state_year_sum)
+SA_rec <- subset(state_year_sum, legbodyCODE == "SA") %>%
+  select(year, n)
+
+SA_plot_df <- SA_rec %>%
+  left_join(SA_anom, by = "year")
+summary(SA_plot_df)
+
+scale_factor <- max(cumsum(SA_plot_df$n), na.rm = TRUE) /
+  max(abs(SA_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(SA_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(SA_plot_df)
+ggplot(SA_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+SA.linreg <- linreg.ER(x=SA_plot_df$anomaly, y=cumsum(SA_plot_df$n))
+SA.linreg
+
+## QLD
+head(anomalies_state)
+QLD_anom <- 
+  anomalies_state %>%
+  filter(state == "QLD") %>%
+  select(year, anomaly)
+head(state_year_sum)
+QLD_rec <- subset(state_year_sum, legbodyCODE == "QLD") %>%
+  select(year, n)
+
+QLD_plot_df <- QLD_rec %>%
+  left_join(QLD_anom, by = "year")
+summary(QLD_plot_df)
+
+scale_factor <- max(cumsum(QLD_plot_df$n), na.rm = TRUE) /
+  max(abs(QLD_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(QLD_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(QLD_plot_df)
+ggplot(QLD_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+QLD.linreg <- linreg.ER(x=QLD_plot_df$anomaly, y=cumsum(QLD_plot_df$n))
+QLD.linreg
+
+## NSW
+head(anomalies_state)
+NSW_anom <- 
+  anomalies_state %>%
+  filter(state == "NSW") %>%
+  select(year, anomaly)
+head(state_year_sum)
+NSW_rec <- subset(state_year_sum, legbodyCODE == "NSW") %>%
+  select(year, n)
+
+NSW_plot_df <- NSW_rec %>%
+  left_join(NSW_anom, by = "year")
+summary(NSW_plot_df)
+
+scale_factor <- max(cumsum(NSW_plot_df$n), na.rm = TRUE) /
+  max(abs(NSW_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(NSW_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(NSW_plot_df)
+ggplot(NSW_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+NSW.linreg <- linreg.ER(x=NSW_plot_df$anomaly, y=cumsum(NSW_plot_df$n))
+NSW.linreg
+
+## VIC
+head(anomalies_state)
+VIC_anom <- 
+  anomalies_state %>%
+  filter(state == "VIC") %>%
+  select(year, anomaly)
+head(state_year_sum)
+VIC_rec <- subset(state_year_sum, legbodyCODE == "VIC") %>%
+  select(year, n)
+
+VIC_plot_df <- VIC_rec %>%
+  left_join(VIC_anom, by = "year")
+summary(VIC_plot_df)
+
+scale_factor <- max(cumsum(VIC_plot_df$n), na.rm = TRUE) /
+  max(abs(VIC_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(VIC_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(VIC_plot_df)
+ggplot(VIC_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+VIC.linreg <- linreg.ER(x=VIC_plot_df$anomaly, y=cumsum(VIC_plot_df$n))
+VIC.linreg
+
+## TAS
+head(anomalies_state)
+TAS_anom <- 
+  anomalies_state %>%
+  filter(state == "TAS") %>%
+  select(year, anomaly)
+head(state_year_sum)
+TAS_rec <- subset(state_year_sum, legbodyCODE == "TAS") %>%
+  select(year, n)
+
+TAS_plot_df <- TAS_rec %>%
+  left_join(TAS_anom, by = "year")
+summary(TAS_plot_df)
+
+scale_factor <- max(cumsum(TAS_plot_df$n), na.rm = TRUE) /
+  max(abs(TAS_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(TAS_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(TAS_plot_df)
+ggplot(TAS_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+TAS.linreg <- linreg.ER(x=TAS_plot_df$anomaly, y=cumsum(TAS_plot_df$n))
+TAS.linreg
+
+# NT
+head(anomalies_state)
+NT_anom <- 
+  anomalies_state %>%
+  filter(state == "NT") %>%
+  select(year, anomaly)
+head(state_year_sum)
+NT_rec <- subset(state_year_sum, legbodyCODE == "NT") %>%
+  select(year, n)
+
+NT_plot_df <- NT_rec %>%
+  left_join(NT_anom, by = "year")
+summary(NT_plot_df)
+
+scale_factor <- max(cumsum(NT_plot_df$n), na.rm = TRUE) /
+  max(abs(NT_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(NT_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(NT_plot_df)
+ggplot(NT_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+NT.linreg <- linreg.ER(x=NT_plot_df$anomaly, y=cumsum(NT_plot_df$n))
+NT.linreg
+
+## WA
+head(anomalies_state)
+WA_anom <- 
+  anomalies_state %>%
+  filter(state == "WA") %>%
+  select(year, anomaly)
+head(state_year_sum)
+WA_rec <- subset(state_year_sum, legbodyCODE == "WA") %>%
+  select(year, n)
+
+WA_plot_df <- WA_rec %>%
+  left_join(WA_anom, by = "year")
+summary(WA_plot_df)
+
+scale_factor <- max(cumsum(WA_plot_df$n), na.rm = TRUE) /
+  max(abs(WA_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(WA_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(WA_plot_df)
+ggplot(WA_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+WA.linreg <- linreg.ER(x=WA_plot_df$anomaly, y=cumsum(WA_plot_df$n))
+WA.linreg
+
+
+## ACT
+head(anomalies_state)
+ACT_anom <- 
+  anomalies_state %>%
+  filter(state == "ACT") %>%
+  select(year, anomaly)
+head(state_year_sum)
+ACT_rec <- subset(state_year_sum, legbodyCODE == "ACT") %>%
+  select(year, n)
+
+ACT_plot_df <- ACT_rec %>%
+  left_join(ACT_anom, by = "year")
+summary(ACT_plot_df)
+
+scale_factor <- max(cumsum(ACT_plot_df$n), na.rm = TRUE) /
+  max(abs(ACT_plot_df$anomaly), na.rm = TRUE)
+
+ggplot(ACT_plot_df, aes(x = year)) +
+  # records (left axis)
+  geom_line(
+    aes(y = cumsum(n)),
+    colour = "#2C7BB6",
+    linewidth = 1
+  ) +
+  
+  # temperature anomaly (right axis, rescaled)
+  geom_line(
+    aes(y = anomaly * scale_factor),
+    colour = "#D7191C",
+    linewidth = 1
+  ) +
+  
+  scale_y_continuous(
+    name = "cumulative number of records",
+    sec.axis = sec_axis(
+      ~ . / scale_factor,
+      name = "anomaly (°C)"
+    )
+  ) +
+  
+  labs(
+    x        = "year"
+  ) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.title.y.left  = element_text(color = "#2C7BB6"),
+    axis.text.y.left   = element_text(color = "#2C7BB6"),
+    axis.title.y.right = element_text(color = "#D7191C"),
+    axis.text.y.right  = element_text(color = "#D7191C")
+  )
+
+## bivariate plot of cumulative records and temperature anomalies by year
+head(ACT_plot_df)
+ggplot(ACT_plot_df, aes(x = anomaly, y = cumsum(n))) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_y_log10() +
+  labs(x = "temperature anomaly (°C)", y = "cumulative number of records") +
+  theme_minimal()
+ACT.linreg <- linreg.ER(x=ACT_plot_df$anomaly, y=cumsum(ACT_plot_df$n))
+ACT.linreg
+
+
+
+
+state_2025_anomalies <- na.omit(data.frame(state=map_sf_ae$state, anomaly=map_sf_ae$anomaly))
+state_2025_anomalies
+linreg_R2 <- c(NSW.linreg[2], VIC.linreg[2], QLD.linreg[2], SA.linreg[2],
+                     WA.linreg[2], TAS.linreg[2], NT.linreg[2], ACT.linreg[2])
+linreg_R2
+state_linreg_R2 <- data.frame(
+  state = c("NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"),
+  R2 = linreg_R2)
+state_linreg_R2
+
+## merge
+state_2025_anomalies_linreg <- state_2025_anomalies %>%
+  left_join(state_linreg_R2, by = c("state" = "state"))
+
+## plot relationship
+ggplot(state_2025_anomalies_linreg, aes(x = anomaly, y = R2)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_text_repel(aes(label = state), size = 3) +
+  labs(x = "2025 temperature anomaly (°C)", y = "R² of records-anomaly relationship") +
+  theme_minimal()
+linreg.ER(x=state_2025_anomalies_linreg$anomaly, y=state_2025_anomalies_linreg$R2)
+
+
+## year of first record by state
+first_record_year <- data_years %>%
+  group_by(legbodyCODE) %>%
+  summarise(first_year = min(year, na.rm = TRUE), .groups = "drop")
+
+## average anomaly from year of initial record to 2025 by state
+head(anomalies_state)
+
+state_anom_joined <- anomalies_state %>%
+  left_join(
+    first_record_year,
+    by = c("state" = "legbodyCODE")
+  )
+
+mean_anomaly_by_state <- state_anom_joined %>%
+  filter(
+    year >= first_year,
+    year <= 2025
+  ) %>%
+  group_by(state) %>%
+  summarise(
+    first_year = first(first_year),
+    mean_anomaly = mean(anomaly, na.rm = TRUE),
+    n_years = n(),
+    .groups = "drop"
+  )
+
+## merge with state_linreg_R2
+state_anomalies_linreg <- mean_anomaly_by_state %>%
+  left_join(state_linreg_R2, by = c("state" = "state"))
+
+## plot relationship
+ggplot(state_anomalies_linreg, aes(x = mean_anomaly, y = R2)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_text_repel(aes(label = state), size = 3) +
+  labs(x = "mean temperature anomaly (°C)", y = "R² of records-anomaly relationship") +
+  theme_minimal()
+linreg.ER(x=state_anomalies_linreg$mean_anomaly, y=state_anomalies_linreg$R2)
+
+## scale records time series by state for better comparison to temperature anomalies
+## SA
+SA_plot_df_scaled <- SA_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(SA_plot_df_scaled$anomaly, cumsum(SA_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+SA.lm <- lm(cumsum(SA_plot_df_scaled$n_scaled) ~ SA_plot_df_scaled$anomaly)
+SA.lm.summ <- summary(SA.lm)
+SA.lm.summ
+SA.slope <- as.numeric(coefficients(SA.lm)[2])
+SA.slope
+SA.slope.se <- as.numeric(coef(summary(SA.lm))[2, 2])
+SA.slope.se
+
+## NSW
+NSW_plot_df_scaled <- NSW_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(NSW_plot_df_scaled$anomaly, cumsum(NSW_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+NSW.lm <- lm(cumsum(NSW_plot_df_scaled$n_scaled) ~ NSW_plot_df_scaled$anomaly)
+NSW.lm.summ <- summary(NSW.lm)
+NSW.lm.summ
+NSW.slope <- as.numeric(coefficients(NSW.lm)[2])
+NSW.slope
+NSW.slope.se <- as.numeric(coef(summary(NSW.lm))[2, 2])
+NSW.slope.se
+
+## QLD
+QLD_plot_df_scaled <- QLD_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(QLD_plot_df_scaled$anomaly, cumsum(QLD_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+QLD.lm <- lm(cumsum(QLD_plot_df_scaled$n_scaled) ~ QLD_plot_df_scaled$anomaly)
+QLD.lm.summ <- summary(QLD.lm)
+QLD.lm.summ
+QLD.slope <- as.numeric(coefficients(QLD.lm)[2])
+QLD.slope
+QLD.slope.se <- as.numeric(coef(summary(QLD.lm))[2, 2])
+QLD.slope.se
+
+## VIC
+VIC_plot_df_scaled <- VIC_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(VIC_plot_df_scaled$anomaly, cumsum(VIC_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+VIC.lm <- lm(cumsum(VIC_plot_df_scaled$n_scaled) ~ VIC_plot_df_scaled$anomaly)
+VIC.lm.summ <- summary(VIC.lm)
+VIC.lm.summ
+VIC.slope <- as.numeric(coefficients(VIC.lm)[2])
+VIC.slope
+VIC.slope.se <- as.numeric(coef(summary(VIC.lm))[2, 2])
+VIC.slope.se
+
+## TAS
+TAS_plot_df_scaled <- TAS_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(TAS_plot_df_scaled$anomaly, cumsum(TAS_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+TAS.lm <- lm(cumsum(TAS_plot_df_scaled$n_scaled) ~ TAS_plot_df_scaled$anomaly)
+TAS.lm.summ <- summary(TAS.lm)
+TAS.lm.summ
+TAS.slope <- as.numeric(coefficients(TAS.lm)[2])
+TAS.slope
+TAS.slope.se <- as.numeric(coef(summary(TAS.lm))[2, 2])
+TAS.slope.se
+
+## NT
+NT_plot_df_scaled <- NT_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(NT_plot_df_scaled$anomaly, cumsum(NT_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+NT.lm <- lm(cumsum(NT_plot_df_scaled$n_scaled) ~ NT_plot_df_scaled$anomaly)
+NT.lm.summ <- summary(NT.lm)
+NT.lm.summ
+NT.slope <- as.numeric(coefficients(NT.lm)[2])
+NT.slope
+NT.slope.se <- as.numeric(coef(summary(NT.lm))[2, 2])
+NT.slope.se
+
+## ACT
+ACT_plot_df_scaled <- ACT_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(ACT_plot_df_scaled$anomaly, cumsum(ACT_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+ACT.lm <- lm(cumsum(ACT_plot_df_scaled$n_scaled) ~ ACT_plot_df_scaled$anomaly)
+ACT.lm.summ <- summary(ACT.lm)
+ACT.lm.summ
+ACT.slope <- as.numeric(coefficients(ACT.lm)[2])
+ACT.slope
+ACT.slope.se <- as.numeric(coef(summary(ACT.lm))[2, 2])
+ACT.slope.se
+
+## WA
+WA_plot_df_scaled <- WA_plot_df %>%
+  mutate(n_scaled = n / max(cumsum(n), na.rm = TRUE))
+plot(WA_plot_df_scaled$anomaly, cumsum(WA_plot_df_scaled$n_scaled), pch=19, xlab="temperature anomaly (°C)", ylab="scaled cumulative number of records")
+WA.lm <- lm(cumsum(WA_plot_df_scaled$n_scaled) ~ WA_plot_df_scaled$anomaly)
+WA.lm.summ <- summary(WA.lm)
+WA.lm.summ
+WA.slope <- as.numeric(coefficients(WA.lm)[2])
+WA.slope
+WA.slope.se <- as.numeric(coef(summary(WA.lm))[2, 2])
+WA.slope.se
+
+state.lm.slopes <- c(NSW.slope, VIC.slope, QLD.slope, SA.slope, WA.slope, TAS.slope, NT.slope, ACT.slope)
+state.lm.slope.ses <- c(NSW.slope.se, VIC.slope.se, QLD.slope.se, SA.slope.se, WA.slope.se, TAS.slope.se, NT.slope.se, ACT.slope.se)  
+state.lm.coeff <- data.frame(state=c("NSW", "VIC", "QLD", "SA", "WA", "TAS", "NT", "ACT"),
+                             slope = state.lm.slopes, slope_se = state.lm.slope.ses)
+state.lm.coeff
+
+## merge with state_anomalies_linreg
+state_2025_anomalies_linreg_lm <- state_anomalies_linreg %>%
+  left_join(
+    state.lm.coeff,
+    by = c("state" = "state")
+  )
+state_2025_anomalies_linreg_lm
+
+## plot relationship between anomalies and slope of records-anomaly relationship
+ggplot(state_2025_anomalies_linreg_lm, aes(x = mean_anomaly, y = slope)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_text_repel(aes(label = state), size = 3) +
+  labs(x = "mean temperature anomaly (°C)", y = "slope of scaled cumulative records-anomaly relationship") +
+  theme_minimal()
+linreg.ER(x=state_2025_anomalies_linreg_lm$mean_anomaly, y=state_2025_anomalies_linreg_lm$slope)
+lin.mod <- lm(slope ~ mean_anomaly, data = state_2025_anomalies_linreg_lm)
+summary(lin.mod)
