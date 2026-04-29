@@ -2,13 +2,21 @@
 ## Corey Bradshaw & Maddy King
 ## Apr 2026
 
+library(data.table)
 library(dplyr)
 library(ggplot2)
-library(tidyr)
 library(ggpubr)
 library(ggrepel)
+library(lubridate)
+library(ozmaps)
+library(purrr)
+library(rnaturalearth)
+library(sf)
+library(terra)
+library(tidyr)
+library(viridis)
 
-# import data
+# import policy data
 setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/data/")
 
 ## read comma-delimited text file
@@ -349,7 +357,6 @@ ggplot(total_haz_long, aes(x = reorder(hazard, -p), y = p, fill = hazard)) +
 
 ###############################################
 ## summary by climate risk assessment category
-
 data$risk_infrastr <- data$Climate_Risk_Assessment_Infrastructure_Built_Environment
 data$risk_health <- data$Climate_Risk_Assessment_Health_Social_Support
 data$risk_nature <- data$Climate_Risk_Assessment_Natural_Environment
@@ -510,9 +517,7 @@ ggplot(df_total_risk_long, aes(x = risk_category, y = p, fill = risk_category)) 
 
 #######################
 ## occurrence by year
-
-## first, create dataset with expanding range between Start_Year and End_Year
-## by year; if no 'End_Year', just use Start_Year; remove NAs first
+## first, create dataset with expanding range between Start_Year and End_Year  by year
 data_years <- data %>%
   filter(!is.na(Start_Year)) %>%
   mutate(End_Year = ifelse(is.na(End_Year), Start_Year, End_Year)) %>%
@@ -553,6 +558,7 @@ cumrecyr_plot <- ggplot(year_sum, aes(x = year, y = cumsum(n))) +
 ggarrange(recyr_plot, cumrecyr_plot, ncol = 1, nrow = 2)
 
 
+##############################
 ## number of records by state
 state_sum <- data %>%
   group_by(legbodyCODE) %>%
@@ -596,3 +602,223 @@ ggplot(state_sum_pop_income, aes(x = medEarn22, y = n)) +
   labs(x = "median income 2021-2022", y = "number of records") +
   theme_minimal() +
   geom_text_repel(aes(label = legbodyCODE), size = 4, box.padding = 0.5, point.padding = 0.5)
+
+
+
+####################################################
+## state/territory temperature anomaly time series
+## SILO open data https://www.longpaddock.qld.gov.au/silo/
+setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/")
+
+## download (in Terminal) SILO data directly to disk (creates relevant subdirectories)
+## /silo/... included in .gitignore to avoid syncing huge data files with Github
+## warning: each year's .nc file is 419.3 MB, so full download (max & min temp) = ~ 113.2 GB
+  ## for y in $(seq 1891 2025); do
+     ## aws s3 cp \
+     ## s3://silo-open-data/Official/annual/max_temp/${y}.max_temp.nc \
+     ## data/silo/max_temp/ \
+     ## --no-sign-request
+  ## done
+
+  ## and
+
+  ## for y in $(seq 1891 2025); do
+     ## aws s3 cp \
+     ## s3://silo-open-data/Official/annual/min_temp/${y}.min_temp.nc \
+     ## data/silo/min_temp/ \
+     ## --no-sign-request
+  ## done
+
+## retrieve data from downloaded files
+tmax <- rast(list.files("data/silo/max_temp", full.names = TRUE))
+tmin <- rast(list.files("data/silo/min_temp", full.names = TRUE))
+
+## calculate daily mean
+tmean_daily <- (tmax + tmin) / 2
+
+## calculate annual means
+dates <- time(tmean_daily)
+
+tmean_annual <- tapp(
+  tmean_daily,
+  index = lubridate::year(dates),
+  fun   = mean,
+  na.rm = TRUE
+)
+names(tmean_annual)
+
+## define crs
+albers_wkt <- "PROJCRS[\"GDA94 / Australian Albers\",
+  BASEGEOGCRS[\"GDA94\",
+    DATUM[\"Geocentric Datum of Australia 1994\",
+      ELLIPSOID[\"GRS 1980\",6378137,298.257222101]],
+    PRIMEM[\"Greenwich\",0],
+    CS[ellipsoidal,2],
+    AXIS[\"latitude\",north],
+    AXIS[\"longitude\",east],
+    UNIT[\"degree\",0.0174532925199433]],
+  CONVERSION[\"Australian Albers\",
+    METHOD[\"Albers Equal Area\"],
+    PARAMETER[\"Latitude of false origin\",0],
+    PARAMETER[\"Longitude of false origin\",132],
+    PARAMETER[\"Latitude of 1st standard parallel\",-18],
+    PARAMETER[\"Latitude of 2nd standard parallel\",-36],
+    PARAMETER[\"Easting at false origin\",0],
+    PARAMETER[\"Northing at false origin\",0]],
+  CS[Cartesian,2],
+  AXIS[\"easting\",east],
+  AXIS[\"northing\",north],
+  UNIT[\"metre\",1]]"
+
+Sys.setenv(PROJ_LIB = "/usr/share/proj")
+
+## assign crs
+crs(tmean_annual) <- albers_wkt
+
+## state/territory boundaries
+names(ozmaps::abs_ste)
+states_sf <- ozmaps::abs_ste
+
+## terra format
+states_v <- states_sf %>%
+  select(
+    name = all_of("NAME"),
+    geometry
+  ) %>%
+  st_transform(3577) %>%     # Australian Albers
+  vect() %>%
+  makeValid()
+
+## check
+class(states_v)
+nrow(states_v)
+table(states_v$name)
+unique(states_v$name)
+
+# ensure CRS match
+crs(states_v)
+crs(tmean_annual) <- "GEOGCRS[\"WGS 84\",
+  DATUM[\"World Geodetic System 1984\",
+    ELLIPSOID[\"WGS 84\",6378137,298.257223563]],
+  CS[ellipsoidal,2],
+  AXIS[\"latitude\",north],
+  AXIS[\"longitude\",east],
+  UNIT[\"degree\",0.0174532925199433]]"
+tmean_annual_aea <- terra::project(tmean_annual, albers_wkt)
+
+# repair geometries
+states_v <- terra::makeValid(states_v)
+
+## state mean temps
+suppressWarnings({
+  state_means <- terra::extract(
+    tmean_annual_aea,
+    states_v,
+    fun     = mean,
+    weights = TRUE,
+    na.rm   = TRUE,
+    ID      = TRUE
+  )
+})
+names(state_means)
+
+## long format
+state_df <- state_means |>
+  dplyr::rename(poly_id = ID) |>
+  dplyr::left_join(
+    data.frame(
+      poly_id = seq_len(nrow(states_v)),
+      state   = states_v$name
+    ),
+    by = "poly_id"
+  ) |>
+  tidyr::pivot_longer(
+    cols = matches("^X\\d{4}$"),
+    names_to  = "year",
+    values_to = "tmean"
+  ) |>
+  dplyr::mutate(
+    year = as.integer(sub("^X", "", year))
+  ) |>
+  dplyr::select(state, year, tmean)
+
+state_df
+
+state_df$state <- recode(state_df$state, "New South Wales"="NSW",
+                           "Victoria"="VIC",
+                           "Queensland"="QLD",
+                           "South Australia"="SA",
+                           "Western Australia"="WA",
+                           "Tasmania"="TAS",
+                           "Northern Territory"="NT",
+                           "Australian Capital Territory"="ACT",
+                           "Other Territories"="other")
+table(state_df$state)
+state_df
+
+## plot time series of annual mean temperature by state
+ggplot()
+
+
+
+## baseline for temperature anomalies
+baseline_state <- state_df %>%
+  filter(year >= 1900, year <= 1950) %>%
+  group_by(state) %>%
+  summarise(
+    baseline = mean(tmean, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+## anomalies
+anomalies_state <- state_df %>%
+  left_join(baseline_state, by = "state") %>%
+  mutate(anomaly = tmean - baseline)
+
+## calculate anomalies by SA4 region
+## load SA4 boundaries
+sa4 <- ozmaps::abs_ced.sa4 %>%
+  st_transform(crs = crs(tmean_annual))
+
+## convert for terra
+sa4_v <- vect(sa4)
+
+## area-weighted extraction by SA4
+sa4_means <- terra::extract(
+  tmean_annual,
+  sa4_v,
+  fun     = mean,
+  weights = TRUE,
+  na.rm  = TRUE
+)
+
+# long format
+sa4_df <- sa4_means %>%
+  mutate(
+    sa4_code = sa4$SA4_CODE21,
+    sa4_name = sa4$SA4_NAME21,
+    state    = sa4$STATE_CODE21
+  ) %>%
+  tidyr::pivot_longer(
+    cols = starts_with("lyr"),
+    names_to  = "layer",
+    values_to = "tmean"
+  ) %>%
+  mutate(
+    year = as.integer(sub("lyr.", "", layer))
+  ) %>%
+  select(sa4_code, sa4_name, state, year, tmean)
+
+## baseline
+baseline_sa4 <- sa4_df %>%
+  filter(year >= 1900, year <= 1950) %>%
+  group_by(sa4_code) %>%
+  summarise(
+    baseline = mean(tmean, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+## anomalies
+anomalies_sa4 <- sa4_df %>%
+  left_join(baseline_sa4, by = "sa4_code") %>%
+  mutate(anomaly = tmean - baseline)
