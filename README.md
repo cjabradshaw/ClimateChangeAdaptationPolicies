@@ -20,7 +20,7 @@ Maddy King
 - <code>earningMedSA4</code>: median individual earnings per SA4 area (<a href="https://www.abs.gov.au/statistics/labour/earnings-and-working-conditions/personal-income-australia/2021-22#data-downloads">Australian Bureau of Statistics</a>)
 
 ## R libraries
-<code>dplyr</code>, <code>ggplot2</code>, <code>ggpubr</code>, <code>ggrepel</code>, <code>tidyr</code>
+<code>data.table</code>, <code>dplyr</code>, <code>ggplot2</code>, <code>ggpubr</code>, <code>ggrepel</code>, <code>lubridate</code>, <code>ozmaps</code>, <code>purrr</code>, <code>rnaturalearth</code>, <code>sf</code>, <code>terra</code>, <code>tidyr</code>, <code>viridis</code>
 <br>
 <br>
 
