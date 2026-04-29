@@ -10,7 +10,9 @@ April 2026 <br>
 <br>
 Maddy King
 <a href="http://flinders.edu.au" target="_blank">Flinders University</a>, Adelaide, Australia <br>
+<a href=mailto:maddy.king@flinders.edu.au>e-mail</a> <br>
 <br>
+
 
 ## <a href="https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies/tree/main/scripts">Scripts</a>
 - <code>CAP.R</code> (main code)
