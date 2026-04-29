@@ -1,0 +1,19 @@
+## run in Terminal to download SILO open data (.nc files)
+## https://www.longpaddock.qld.gov.au/silo/
+## downloads ~ 113 GB of data into /data/ subfolder
+
+## max temperature
+for y in $(seq 1891 2025); do
+  aws s3 cp \
+    s3://silo-open-data/Official/annual/max_temp/${y}.max_temp.nc \
+    data/silo/max_temp/ \
+    --no-sign-request
+done
+
+## min temperature
+for y in $(seq 1891 2025); do
+  aws s3 cp \
+    s3://silo-open-data/Official/annual/min_temp/${y}.min_temp.nc \
+    data/silo/min_temp/ \
+    --no-sign-request
+done
