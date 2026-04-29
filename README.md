@@ -14,6 +14,7 @@ Maddy King
 
 ## <a href="https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies/tree/main/scripts">Scripts</a>
 - <code>CAP.R</code> (main code)
+- <code>SILOncDownload.txt</code>: Terminal commands to download annual .nc layers for Australia from <a href="https://www.longpaddock.qld.gov.au/silo/">SILO</a>
 
 ## Data
 - <code>CAPdat.csv</code>: main policy database
