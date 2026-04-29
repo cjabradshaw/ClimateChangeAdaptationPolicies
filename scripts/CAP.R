@@ -1666,6 +1666,8 @@ mean_anomaly_by_state <- state_anom_joined %>%
   summarise(
     first_year = first(first_year),
     mean_anomaly = mean(anomaly, na.rm = TRUE),
+    sd_anomaly = sd(anomaly, na.rm = TRUE),
+    se_anomaly = sd_anomaly / sqrt(n()),
     n_years = n(),
     .groups = "drop"
   )
@@ -1797,10 +1799,16 @@ state_2025_anomalies_linreg_lm
 ## plot relationship between anomalies and slope of records-anomaly relationship
 ggplot(state_2025_anomalies_linreg_lm, aes(x = mean_anomaly, y = slope)) +
   geom_point() +
-  geom_smooth(method = "lm") +
-  geom_text_repel(aes(label = state), size = 3) +
+  geom_errorbar(aes(ymin = slope - slope_se,ymax = slope + slope_se), width = 0.01,
+                linewidth=0.2, color="grey7") +
+  geom_errorbar(aes(xmin = mean_anomaly - se_anomaly, xmax = mean_anomaly + se_anomaly),
+                width = 0.01, linewidth=0.2, color="grey7") +
+  geom_smooth(method = "lm", fullrange=T, linetype="dashed") +
+  geom_text_repel(aes(label = state), size = 4, color="grey7") +
   labs(x = "mean temperature anomaly (°C)", y = "slope of scaled cumulative records-anomaly relationship") +
   theme_minimal()
 linreg.ER(x=state_2025_anomalies_linreg_lm$mean_anomaly, y=state_2025_anomalies_linreg_lm$slope)
 lin.mod <- lm(slope ~ mean_anomaly, data = state_2025_anomalies_linreg_lm)
 summary(lin.mod)
+
+
