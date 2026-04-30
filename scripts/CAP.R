@@ -548,7 +548,132 @@ ggplot(df_total_risk_long, aes(x = risk_category, y = p, fill = risk_category)) 
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
-                               
+                  
+
+## summarise by purpose, amalgamating categories into 4 broad groups:
+## 1. 'governance' = governance instruments + institutional change
+## 2. 'research' = information gathering + research + knowledge building
+## 3. 'coordination' = stakeholder engagement + coordination
+## 4. 'intervention' = intervention
+data$governance <- ifelse(data$Purpose_Governance_Instruments == 1 | 
+                          data$Purpose_Institutional_Change == 1, 1, 0)
+data$research <- ifelse(data$Purpose_Information_Gathering == 1 | 
+                        data$Purpose_Research == 1 | 
+                        data$Purpose_Knowledge_Building == 1, 1, 0)
+data$coordination <- ifelse(data$Purpose_Stakeholder_Engagement == 1 | 
+                            data$Purpose_Coordination == 1, 1, 0)
+data$intervention <- data$Purpose_Intervention
+                            
+## plot proportions by each purpose category by state, if a category is missing in 1 state, ignore warning and set to zero
+purpose_sum <- data %>%
+  group_by(legbodyCODE) %>%
+  summarise(n_governance = sum(governance, na.rm=TRUE),
+            n_research = sum(research, na.rm=TRUE),
+            n_coordination = sum(coordination, na.rm=TRUE),
+            n_intervention = sum(intervention, na.rm=TRUE),
+            p_governance = n_governance / sum(n_governance, n_research, n_coordination, n_intervention),
+            p_research = n_research / sum(n_governance, n_research, n_coordination, n_intervention),
+            p_coordination = n_coordination / sum(n_governance, n_research, n_coordination, n_intervention),
+            p_intervention = ifelse(sum(n_governance,n_research,n_coordination,n_intervention) == 0, 0,
+                                    ifelse(is.na(n_intervention), 0 ,n_intervention / sum(n_governance,n_research,n_coordination,n_intervention))))
+purpose_sum
+
+## pivot counts
+df_purpose_long <- purpose_sum %>%
+  pivot_longer(
+    cols = c(p_governance, p_research, p_coordination, p_intervention),
+    names_to = "purpose_category",
+    values_to = "p"
+  ) %>%
+  mutate(
+    purpose_category = recode(purpose_category,
+                           p_governance = "governance",
+                            p_research = "research",
+                            p_coordination = "coordination",
+                            p_intervention = "intervention")
+  )
+df_purpose_long
+
+# plot
+ggplot(df_purpose_long, aes(x = legbodyCODE, y = p, fill = purpose_category)) +
+  geom_col() +
+  scale_fill_manual(values = c("governance" = "darkgrey",
+                               "research" = "red",                         
+                               "coordination" = "blue",
+                               "intervention" = "green")) +
+  labs(
+    x = "state/territory",
+    y = "proportion",
+    fill = "purpose category"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1),
+        legend.position = "top")
+
+## summarise across all states/territories
+total_purpose <- data %>%
+  summarise(n_governance = sum(governance, na.rm=TRUE),
+            n_research = sum(research, na.rm=TRUE),
+            n_coordination = sum(coordination, na.rm=TRUE),
+            n_intervention = sum(intervention, na.rm=TRUE),
+            p_governance = n_governance / sum(n_governance, n_research, n_coordination, n_intervention),
+            p_research = n_research / sum(n_governance, n_research, n_coordination, n_intervention),
+            p_coordination = n_coordination / sum(n_governance, n_research, n_coordination, n_intervention),
+            p_intervention = ifelse(sum(n_governance,n_research,n_coordination,n_intervention) == 0, 0,
+                                    ifelse(is.na(n_intervention), 0 ,n_intervention / sum(n_governance,n_research,n_coordination,n_intervention))))
+total_purpose
+
+# plot
+df_total_purpose_long <- total_purpose %>%
+  pivot_longer(
+    cols = c(p_governance, p_research, p_coordination, p_intervention),
+    names_to = "purpose_category",
+    values_to = "p"
+  ) %>%
+  mutate(
+    purpose_category = recode(purpose_category,
+                              p_governance = "governance",
+                              p_research = "research",
+                              p_coordination = "coordination",
+                              p_intervention = "intervention")
+  )
+df_total_purpose_long
+
+ggplot(df_total_purpose_long, aes(x = purpose_category, y = p, fill = purpose_category)) +
+  geom_col() +
+  scale_fill_manual(values = c("governance" = "darkgrey",
+                               "research" = "red",                         
+                               "coordination" = "blue",
+                               "intervention" = "green")) +
+  labs(
+    x = "",
+    y = "proportion",
+    fill = "purpose category"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+## reorder from highest to lowest proportion
+df_total_purpose_long$purpose_category <- factor(df_total_purpose_long$purpose_category,
+                                                levels = df_total_purpose_long$purpose_category[order(df_total_purpose_long$p, decreasing = TRUE)])
+# replot
+ggplot(df_total_purpose_long, aes(x = purpose_category, y = p, fill = purpose_category)) +
+  geom_col() +
+  scale_fill_manual(values = c("governance" = "darkgrey",
+                               "research" = "red",
+                               "coordination" = "blue",
+                               "intervention" = "green")) +
+  labs(
+    x = "",
+    y = "proportion",
+    fill = "purpose category"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+                                  
 
 #######################
 ## occurrence by year
