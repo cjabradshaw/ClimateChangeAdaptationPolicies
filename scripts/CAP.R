@@ -1,6 +1,7 @@
 ## Climate change adaptation policy (CAP) dataset analysis
 ## Corey Bradshaw & Maddy King
 ## Apr 2026
+## Github repository: https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies
 
 library(data.table)
 library(dplyr)
@@ -647,6 +648,7 @@ setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/")
 ## download (in Terminal) SILO data directly to disk (creates relevant subdirectories)
 ## /silo/... included in .gitignore to avoid syncing huge data files with Github
 ## warning: each year's .nc file is 419.3 MB, so full download (max & min temp) = ~ 113.2 GB
+## code also available as 'SILOncDownload.txt' in the Github repository (https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies)
   ## for y in $(seq 1891 2025); do
      ## aws s3 cp \
      ## s3://silo-open-data/Official/annual/max_temp/${y}.max_temp.nc \
