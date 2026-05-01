@@ -20,7 +20,7 @@ Maddy King
 
 ## Data
 - <em>CAPdat.csv</em>: main policy database
-- <em>earningMedSA4</em>: median individual earnings per SA4 area (<a href="https://www.abs.gov.au/statistics/labour/earnings-and-working-conditions/personal-income-australia/2021-22#data-downloads">Australian Bureau of Statistics</a>)
+- <em>earningMedSA4</em>: median individual earnings per <a href="https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3/jul2021-jun2026/main-structure-and-greater-capital-city-statistical-areas/statistical-area-level-4">Statistical Area Level 4</a> (SA4) (<a href="https://www.abs.gov.au/statistics/labour/earnings-and-working-conditions/personal-income-australia/2021-22#data-downloads">Australian Bureau of Statistics</a>)
 - annual NetCDF (.nc) climate layers for Australia downloaded by the user (see <code>SILOncDownload.txt</code> in the '<a href="https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies/tree/main/scripts">scripts</a>' subdirectory)
 - <em>popSA4.csv</em>: resident population estimates by SA4 code from 2001–2025 (<a href="https://dataexplorer.abs.gov.au/vis?tm=ABS_ANNUAL_ERP_ASGS2021&pg=0&snb=1&df%5Bds%5D=PEOPLE_TOPICS&df%5Bid%5D=ABS_ANNUAL_ERP_ASGS2021&df%5Bag%5D=ABS&df%5Bvs%5D=1.2.0&dq=.GCCSA..A&pd=2015,&to%5BTIME_PERIOD%5D=false">Australian Bureau of Statistics</a>)
 
