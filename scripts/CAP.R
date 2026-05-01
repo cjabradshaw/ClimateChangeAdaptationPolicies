@@ -55,7 +55,7 @@ linreg.ER <- function(x,y) { # where x and y are vectors of the same length; cal
 setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/data/")
 
 ## read comma-delimited text file
-data <- read.table("CAPdat.csv", header=TRUE, sep=",", dec=".", strip.white=TRUE, quote="\"")
+data <- read.table("CAPdatV2.csv", header=TRUE, sep=",", dec=".", strip.white=TRUE, quote="\"")
 head(data)
 
 ## recode legbody to Australian State/Territory abbreviations
@@ -74,11 +74,13 @@ table(data$legbodyCODE)
 ## summary by political ideology
 
 ## which columns start with 'Political_Party'
-politics_colnames <- colnames(data)[grepl("^Political_Party", colnames(data))]
+politics_colnames <- colnames(data)[grepl("^Party", colnames(data))]
+politics_colnames
 
 ## create left-right categories
-data$pol_LEFT <- data$Political_Party_Labor
-data$pol_RIGHT <- ifelse(data$Political_Party_Coalition | data$Political_Party_Liberal, 1, 0)
+data$pol_LEFT <- ifelse(data$Party_Labor == 1 | data$Party_Labor_Greens == 1, 1, 0)
+data$pol_RIGHT <- ifelse(data$Party_Liberal == 1 | data$Party_Nationals == 1 |
+                           data$Party_Liberal_National == 1, 1, 0)
 
 ## plot proportion of records with left or right political affiliation by state
 sum_pol <- sum(data$pol_LEFT, na.rm=TRUE) + sum(data$pol_RIGHT, na.rm=TRUE)
@@ -673,7 +675,7 @@ ggplot(df_total_purpose_long, aes(x = purpose_category, y = p, fill = purpose_ca
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
 
-                                  
+
 
 #######################
 ## occurrence by year
@@ -762,6 +764,73 @@ ggplot(state_sum_pop_income, aes(x = medEarn22, y = n)) +
   labs(x = "median income 2021-2022", y = "number of records") +
   theme_minimal() +
   geom_text_repel(aes(label = legbodyCODE), size = 4, box.padding = 0.5, point.padding = 0.5)
+
+## SA4 income
+sa4_income <- income_data[which(is.na(income_data$SA4CODE)==F),]
+
+## SA4 population estimates
+## https://dataexplorer.abs.gov.au/vis?tm=ABS_ANNUAL_ERP_ASGS2021&pg=0&snb=1&df%5Bds%5D=PEOPLE_TOPICS&df%5Bid%5D=ABS_ANNUAL_ERP_ASGS2021&df%5Bag%5D=ABS&df%5Bvs%5D=1.2.0&dq=.GCCSA..A&pd=2015,&to%5BTIME_PERIOD%5D=false
+sa4pop <- read.csv("popSA4.csv", header=TRUE, sep=",", dec=".", strip.white=TRUE, quote="\"")
+head(sa4pop)
+sa4pop$pop_mean <- apply(sa4pop[,2:ncol(sa4pop)], 1, mean, na.rm=TRUE)
+head(sa4pop)
+
+## merge sa4pop with sa4income
+sa4_income_pop <- merge(sa4_income, sa4pop[,c("SA4CODE", "pop_mean")], by.x = "SA4CODE", by.y = "SA4CODE")
+head(sa4_income_pop)
+
+## tabulate number of records by SA4 region in data
+data$SA4CODE_2021_2022
+
+## for records with > 1 SA4 region, split into multiple rows (one per SA4 region)
+data_sa4 <- data %>%
+  filter(!is.na(SA4CODE_2021_2022)) %>%
+  rowwise() %>%
+  mutate(SA4CODE_2021_2022 = strsplit(as.character(SA4CODE_2021_2022), ";")) %>%
+  unnest(SA4CODE_2021_2022)
+head(data_sa4)
+                                                   
+colnames(data_sa4)
+data_sa4$SA4CODE_2021_2022
+
+## create new numeric SA4CODE variable from the numbers in the character SA4CODE_2021_2022 variable
+data_sa4$SA4CODE <- as.numeric(data_sa4$SA4CODE_2021_2022)
+data_sa4$SA4CODE
+
+## tabulate number of records by SA4CODE
+sa4_sum <- data_sa4 %>%
+  group_by(SA4CODE) %>%
+  summarise(n = n())
+sa4_sum
+
+## merge sa4_income_pop with sa4_sum by SA4CODE & retain only relevant columns
+sa4_income_pop_sum <- merge(sa4_income_pop, sa4_sum, by.x = "SA4CODE", by.y = "SA4CODE", all.x = TRUE)
+sa4_income_pop_sum
+
+## create nrecords by population (per 1 million people) variable)
+sa4_income_pop_sum$nrecXpop <- sa4_income_pop_sum$n / (sa4_income_pop_sum$pop_mean / 1000000)
+head(sa4_income_pop_sum)
+
+## plot nrecXpop by medEarn22
+ggplot(sa4_income_pop_sum, aes(x = medEarn22, y = nrecXpop)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(x = "median income 2021-2022", y = "number of records / million people") +
+  theme_minimal() # +
+  #geom_text_repel(aes(label = SA4CODE), size = 2.5, box.padding = 0.5, point.padding = 0.5)
+
+## plot nrec by medEarn22
+ggplot(sa4_income_pop_sum, aes(x = medEarn22, y = n)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(x = "median income 2021-2022", y = "number of records") +
+  theme_minimal() #+
+  #geom_text_repel(aes(label = SA4CODE), size = 2.5, box.padding = 0.5, point.padding = 0.5)
+
 
 
 
