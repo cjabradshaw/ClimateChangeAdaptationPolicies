@@ -26,8 +26,6 @@ library(tidyr)
 library(viridis)
 library(units)
 
-
-
 # functions
 AICc <- function(...) {
   models <- list(...)
