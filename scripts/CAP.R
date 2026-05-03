@@ -1292,7 +1292,6 @@ data_yearsXstate <- data_years %>%
   group_split(legbodyCODE, .keep = TRUE) %>%
   setNames(sort(unique(data_years$legbodyCODE)))
 
-
 ## count number of records per year per state
 state_year_sum <- data_years %>%
                     count(legbodyCODE, year, name = "n")
@@ -1813,8 +1812,6 @@ ACT.linreg <- linreg.ER(x=ACT_plot_df$anomaly, y=cumsum(ACT_plot_df$n))
 ACT.linreg
 
 
-
-
 state_2025_anomalies <- na.omit(data.frame(state=map_sf_ae$state, anomaly=map_sf_ae$anomaly))
 state_2025_anomalies
 linreg_R2 <- c(NSW.linreg[2], VIC.linreg[2], QLD.linreg[2], SA.linreg[2],
@@ -2006,5 +2003,3 @@ ggplot(state_2025_anomalies_linreg_lm, aes(x = mean_anomaly, y = slope)) +
 linreg.ER(x=state_2025_anomalies_linreg_lm$mean_anomaly, y=state_2025_anomalies_linreg_lm$slope)
 lin.mod <- lm(slope ~ mean_anomaly, data = state_2025_anomalies_linreg_lm)
 summary(lin.mod)
-
-
