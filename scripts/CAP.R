@@ -55,7 +55,7 @@ linreg.ER <- function(x,y) { # where x and y are vectors of the same length; cal
 setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/data/")
 
 ## read comma-delimited text file
-data <- read.table("CAPdatV2.csv", header=TRUE, sep=",", dec=".", strip.white=TRUE, quote="\"")
+data <- read.table("CAPdat.csv", header=TRUE, sep=",", dec=".", strip.white=TRUE, quote="\"")
 head(data)
 
 ## recode legbody to Australian State/Territory abbreviations
@@ -113,7 +113,7 @@ ggplot(df_prop_long, aes(x = legbodyCODE, y = p, fill = ideology)) +
   scale_fill_manual(values = c("LEFT" = "red", "RIGHT" = "blue")) +
   scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
   labs(
-    x = "State / Territory",
+    x = "state / territory",
     y = "proportion",
     fill = "ideology"
   ) +
