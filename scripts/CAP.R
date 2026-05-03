@@ -3,21 +3,30 @@
 ## Apr 2026
 ## Github repository: https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies
 
+library(car)
 library(data.table)
+library(dismo)
 library(dplyr)
+library(gbm)
 library(ggplot2)
 library(ggpubr)
 library(ggrepel)
+library(lme4)
 library(lubridate)
 library(ozmaps)
+library(performance)
+library(plotly)
 library(purrr)
 library(rnaturalearth)
 library(scales)
 library(sf)
+library(sjPlot)
 library(terra)
 library(tidyr)
 library(viridis)
 library(units)
+
+
 
 # functions
 AICc <- function(...) {
@@ -50,6 +59,11 @@ linreg.ER <- function(x,y) { # where x and y are vectors of the same length; cal
   r.sq.adj <- as.numeric(summary(fit.full)[9])
   return(c(ER,r.sq.adj))
 }
+
+# source files
+setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/scripts/")
+source("new_lmer_AIC_tables3.R") # change path as required
+source("r.squared.R") # change path as required
 
 # import policy data
 setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/data/")
@@ -1085,6 +1099,7 @@ ggplot(map_sf_ae) +
   theme_minimal()
 
 
+#####################################
 ## calculate anomalies by SA4 region
 ## download shapefile from ABS: https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3/jul2021-jun2026/access-and-downloads/digital-boundary-files/SA4_2021_AUST_SHP_GDA2020.zip
 
@@ -2003,3 +2018,187 @@ ggplot(state_2025_anomalies_linreg_lm, aes(x = mean_anomaly, y = slope)) +
 linreg.ER(x=state_2025_anomalies_linreg_lm$mean_anomaly, y=state_2025_anomalies_linreg_lm$slope)
 lin.mod <- lm(slope ~ mean_anomaly, data = state_2025_anomalies_linreg_lm)
 summary(lin.mod)
+
+
+
+###################################################################
+## extract annual temperature data by SA4 and calculate anomalies
+head(anomalies_sa4)
+head(data_sa4)
+
+## filter data_sa4 by Start_Year and End_Year from data_sa4 for each SA4CODE_2021_2022
+data_sa4_years <- data_sa4 |>
+  group_by(SA4CODE_2021_2022) |>
+  summarise(Start_Year = min(Start_Year, na.rm = TRUE),
+            End_Year   = max(End_Year,   na.rm = TRUE),
+            .groups = "drop")
+
+## calculate average anomaly by SA4 in anomalies_sa4 between Start_Year and End_Year in data_sa4
+## if no End_Year, then take anomaly from Start_Year only
+data_sa4_anom <- data_sa4 |>
+  mutate(SA4CODE_2021_2022 = trimws(SA4CODE_2021_2022)) |>
+  rowwise() |>
+  mutate(
+    mean_anomaly = {
+      sub <- anomalies_sa4 |> filter(sa4_code == SA4CODE_2021_2022)
+      if (is.na(End_Year)) {
+        sub |> filter(year == Start_Year) |> pull(anomaly) |> mean(na.rm = TRUE)
+      } else {
+        sub |> filter(year >= Start_Year, year <= End_Year) |> pull(anomaly) |> mean(na.rm = TRUE)
+      }
+    }
+  ) |>
+  ungroup()
+
+sa4_anom_summary <- data_sa4_anom |>
+  group_by(SA4CODE_2021_2022) |>
+  summarise(
+    mean_anom = mean(mean_anomaly, na.rm = TRUE),
+    sd_anom   = sd(mean_anomaly,   na.rm = TRUE),
+    n         = n(),
+    .groups   = "drop"
+  )
+
+## merge with sa4_income
+sa4_anom_income <- sa4_anom_summary |>
+  mutate(SA4CODE_2021_2022 = as.integer(SA4CODE_2021_2022)) |>
+  left_join(sa4_income, by = c("SA4CODE_2021_2022" = "SA4CODE"))
+
+# plot 3D trivariate plot with x = medEarn22, y = mean_anom, and z = n (from sa4_anom_income)
+library(plotly)
+
+sa4_anom_income |>
+  filter(!is.na(SA4)) |>
+  plot_ly(
+    x = ~medEarn22, y = ~mean_anom, z = ~n,
+    type = "scatter3d", mode = "markers",
+    marker = list(size = 4),
+    text = ~SA4,
+    hovertemplate = "<b>%{text}</b><br>income: %{x}<br>mean anomaly: %{y:.3f}<br>n: %{z}<extra></extra>"
+  ) |>
+  layout(
+    scene = list(
+      xaxis = list(title = "median earnings (AU$)"),
+      yaxis = list(title = "mean temperature anomaly (°C)"),
+      zaxis = list(title = "number of policies")
+    )
+  )
+
+## colour points by state
+region_colours <- c(
+  ACT = "blue",
+  NSW = "skyblue",
+  NT  = "#B56425",
+  QLD = "maroon",
+  SA  = "red",
+  TAS = "#006848",
+  VIC = "navy",
+  WA  = "gold"
+)
+
+sa4_anom_income |>
+  filter(!is.na(SA4)) |>
+  mutate(log_n = log10(n)) |>
+  plot_ly(
+    x = ~medEarn22, y = ~mean_anom, z = ~log_n,
+    type = "scatter3d", mode = "markers",
+    color = ~region,
+    colors = region_colours,
+    marker = list(size = 4),
+    text = ~SA4,
+    hovertemplate = "<b>%{text}</b><br>income: %{x}<br>mean anomaly: %{y:.3f}<br>n: %{z}<extra></extra>"
+  ) |>
+  layout(
+    scene = list(
+      xaxis = list(title = "median earnings (AU$)"),
+      yaxis = list(title = "mean temperature anomaly (°C)"),
+      zaxis = list(title = "log10 number of policies")
+    )
+  )
+
+## linear model testing relative effects of anomaly and earnings on number of records
+hist(sa4_anom_income$mean_anom)
+hist(sa4_anom_income$medEarn22)
+hist(log10(sa4_anom_income$n))
+
+## variance inflation factor
+vif_mod <- lm(n ~ mean_anom + medEarn22, data = sa4_anom_income)
+vif(vif_mod)
+
+## plot bivariate relationships between mean_anom and medEarn22
+ggplot(sa4_anom_income, aes(y = mean_anom, x = medEarn22)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_smooth(method = "lm") +
+  labs(x = "median earnings (AU$)", y = "mean temperature anomaly (°C)") +
+  theme_minimal()
+linreg.ER(y=sa4_anom_income$mean_anom, x=sa4_anom_income$medEarn22)
+
+# model set
+m1 <- "n ~ mean_anom + medEarn22"
+m2 <- "n ~ mean_anom"
+m3 <- "n ~ medEarn22"
+m4 <- "n ~ 1"
+
+## model vector
+mod.vec <- c(m1,m2,m3,m4)
+length(mod.vec)
+length(unique(mod.vec))
+
+## define n.mod
+n.mod <- length(mod.vec)
+
+# model fitting and logLik output loop
+Modnum <- length(mod.vec)
+LL.vec <- SaveCount <- AICc.vec <- BIC.vec <- k.vec <- terml <- Rm <- Rc <- rep(0,Modnum)
+mod.list <- summ.fit <- coeffs <- coeffs.se <- term.labs <- coeffs.st <- list()
+mod.num <- seq(1,Modnum,1)
+
+for(i in 1:Modnum) {
+  fit <- glm(as.formula(mod.vec[i]),family=poisson(link="log"), data=sa4_anom_income, na.action=na.omit)
+  assign(paste("fit",i,sep=""), fit)
+  mod.list[[i]] <- fit
+  print(i)
+}
+
+sumtable <- aicW(mod.list, finite = TRUE, null.model = NULL, order = F)
+row.names(sumtable) <- mod.vec
+summary.table <- sumtable[order(sumtable[,7],decreasing=F),1:9]
+summary.table
+
+## saturated residual diagnostic
+i <- 1
+fit <- glm(as.formula(mod.vec[i]),family=poisson(link="log"), data=sa4_anom_income, na.action=na.omit)
+
+check_model(fit)
+plot_model(fit)
+
+## sa4_brt_dat
+sa4_brt_dat <- as.data.frame(na.omit(sa4_anom_income[,c("n", "mean_anom", "medEarn22")]))
+head(sa4_brt_dat)
+
+## which columns?
+pred_cols <- c(which(colnames(sa4_brt_dat) == "mean_anom"), which(colnames(sa4_brt_dat) == "medEarn22"))
+resp_col <- which(colnames(sa4_brt_dat) == "n")
+
+## boosted regression tree
+sa4_brt <- gbm.step(sa4_brt_dat, gbm.x = attr(sa4_brt_dat, "names")[pred_cols],
+                            gbm.y = attr(sa4_brt_dat, "names")[resp_col], family="poisson", max.trees=100000,
+                            learning.rate = 0.000001, bag.fraction=0.55,
+                            tree.complexity = 1, silent=F, step.size=40, tolerance.method = "auto")
+summary(sa4_brt)
+barplot(summary(sa4_brt)$rel.inf, names.arg = summary(sa4_brt)$var, xlab="relative influence", ylab="", col="blue")
+sa4_brt.summ <- summary(sa4_brt)
+
+sa4_brt.CV.cor <- 100 * sa4_brt$cv.statistics$correlation.mean
+sa4_brt.CV.cor.se <- 100 * sa4_brt$cv.statistics$correlation.se
+print(c(sa4_brt.CV.cor, sa4_brt.CV.cor.se))
+
+gbm.plot(sa4_brt)
+
+gbm.plot(sa4_brt, variable.no=2, smooth=T, rug=T, common.scale=T, write.title=F, show.contrib=T, 
+         y.label="n records", x.label="median earnings 2021-2022", plot.layout=c(1,1))
+gbm.plot(sa4_brt, variable.no=1, smooth=T, rug=T, common.scale=T, write.title=F, show.contrib=T, 
+         y.label="n records", x.label="mean temperature anomaly", plot.layout=c(1,1))
+
