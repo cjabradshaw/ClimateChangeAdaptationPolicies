@@ -21,6 +21,8 @@ Dr <a href="https://www.flinders.edu.au/people/altaf.virani">Altaf Virani</a><br
 ## <a href="https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies/tree/main/scripts">Scripts</a>
 - <code>CAP.R</code> (main code)
 - <code>SILOncDownload.txt</code>: Terminal commands to download annual .nc layers for Australia from <a href="https://www.longpaddock.qld.gov.au/silo/">SILO</a>
+- <code>new_lmer_AIC_tables3.R</code>: source code for information-theoretic algorithms
+- <code>r.squared.R</code>: source code for calculating goodness-of-fit for linear models (including mixed-effects models)
 
 ## Data
 - <em>CAPdat.csv</em>: main policy database
@@ -29,7 +31,7 @@ Dr <a href="https://www.flinders.edu.au/people/altaf.virani">Altaf Virani</a><br
 - <em>popSA4.csv</em>: resident population estimates by SA4 code from 2001–2025 (<a href="https://dataexplorer.abs.gov.au/vis?tm=ABS_ANNUAL_ERP_ASGS2021&pg=0&snb=1&df%5Bds%5D=PEOPLE_TOPICS&df%5Bid%5D=ABS_ANNUAL_ERP_ASGS2021&df%5Bag%5D=ABS&df%5Bvs%5D=1.2.0&dq=.GCCSA..A&pd=2015,&to%5BTIME_PERIOD%5D=false">Australian Bureau of Statistics</a>)
 
 ## R libraries
-<code>data.table</code>, <code>dplyr</code>, <code>ggplot2</code>, <code>ggpubr</code>, <code>ggrepel</code>, <code>lubridate</code>, <code>ozmaps</code>, <code>purrr</code>, <code>rnaturalearth</code>, <code>scales</code>, <code>sf</code>, <code>terra</code>, <code>tidyr</code>, <code>units</code>, <code>viridis</code>
+<code>car</code>, <code>data.table</code>, <code>dismo</code>, <code>dplyr</code>, <code>gbm</code>, <code>ggplot2</code>, <code>ggpubr</code>, <code>ggrepel</code>, <code>lme4</code>, <code>lubridate</code>, <code>ozmaps</code>, <code>performance</code>, <code>plotly</code>, <code>purrr</code>, <code>rnaturalearth</code>, <code>scales</code>, <code>sf</code>, <code>sjPlot</code>, <code>terra</code>, <code>tidyr</code>, <code>units</code>, <code>viridis</code>
 <br>
 <br>
 
