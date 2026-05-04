@@ -832,6 +832,7 @@ ggplot(sa4_income_pop_sum, aes(x = medEarn22, y = nrecXpop)) +
   labs(x = "median income 2021-2022", y = "number of records / million people") +
   theme_minimal() # +
   #geom_text_repel(aes(label = SA4CODE), size = 2.5, box.padding = 0.5, point.padding = 0.5)
+linreg.ER(x=sa4_income_pop_sum$nrecXpop, y=sa4_income_pop_sum$medEarn22)
 
 ## plot nrec by medEarn22
 ggplot(sa4_income_pop_sum, aes(x = medEarn22, y = n)) +
@@ -841,7 +842,8 @@ ggplot(sa4_income_pop_sum, aes(x = medEarn22, y = n)) +
   scale_y_log10() +
   labs(x = "median income 2021-2022", y = "number of records") +
   theme_minimal() #+
-  #geom_text_repel(aes(label = SA4CODE), size = 2.5, box.padding = 0.5, point.padding = 0.5)
+linreg.ER(x=sa4_income_pop_sum$n, y=sa4_income_pop_sum$medEarn22)
+#geom_text_repel(aes(label = SA4CODE), size = 2.5, box.padding = 0.5, point.padding = 0.5)
 
 
 
