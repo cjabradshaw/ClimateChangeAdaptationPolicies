@@ -22,7 +22,7 @@ Dr <a href="https://www.flinders.edu.au/people/altaf.virani">Altaf Virani</a><br
 - <code>CAP.R</code> (main code)
 - <code>SILOncDownload.txt</code>: Terminal commands to download annual .nc layers for Australia from <a href="https://www.longpaddock.qld.gov.au/silo/">SILO</a>
 - <code>new_lmer_AIC_tables3.R</code>: source code for information-theoretic algorithms
-- <code>r.squared.R</code>: source code for calculating goodness-of-fit for linear models (including mixed-effects models)
+- <code>r.squared.R</code>: source code for calculating goodness-of-fit for linear models
 
 ## Data
 - <em>CAPdat.csv</em>: main policy database
