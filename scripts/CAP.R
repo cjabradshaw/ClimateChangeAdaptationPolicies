@@ -58,6 +58,7 @@ linreg.ER <- function(x,y) { # where x and y are vectors of the same length; cal
   return(c(ER,r.sq.adj))
 }
 
+
 # source files
 setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/scripts/")
 source("new_lmer_AIC_tables3.R") # change path as required
@@ -126,7 +127,7 @@ ggplot(df_prop_long, aes(x = legbodyCODE, y = p, fill = ideology)) +
   scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
   labs(
     x = "state / territory",
-    y = "proportion",
+    y = "percentage",
     fill = "ideology"
   ) +
   theme_minimal()
@@ -174,7 +175,7 @@ data$IPCC_Inst <- data$IPCCA_Institutional
 head(data)
 
 ## plot proportion of records with each IPCC category by state
-ippc_sum <- data %>%
+ipcc_sum <- data %>%
   group_by(legbodyCODE) %>%
   summarise(n_BehavCult = sum(IPCC_BehavCult, na.rm=TRUE),
             n_Knowl = sum(IPCC_Knowl, na.rm=TRUE),
@@ -186,14 +187,14 @@ ippc_sum <- data %>%
             p_InfrTech = n_InfrTech / sum(n_BehavCult, n_Knowl, n_InfrTech, n_NatBased, n_Inst),
             p_NatBased = n_NatBased / sum(n_BehavCult, n_Knowl, n_InfrTech, n_NatBased, n_Inst),
             p_Inst = n_Inst / sum(n_BehavCult, n_Knowl, n_InfrTech, n_NatBased, n_Inst))
-ippc_sum
+ipcc_sum
 
 ## remove untitled category
-ippc_sum <- subset(ippc_sum, legbodyCODE != "")
-ippc_sum
+ipcc_sum <- subset(ipcc_sum, legbodyCODE != "")
+ipcc_sum
 
 ## pivot counts
-df_ippc_long <- ippc_sum %>%
+df_ipcc_long <- ipcc_sum %>%
   pivot_longer(
     cols = c(p_BehavCult, p_Knowl, p_InfrTech, p_NatBased, p_Inst),
     names_to = "IPCC_category",
@@ -207,7 +208,66 @@ df_ippc_long <- ippc_sum %>%
                           p_NatBased = "Nature-Based",
                           p_Inst = "Institutional")
   )
-df_ippc_long
+
+setwd("/Users/brad0317/Documents/GitHub/ClimateChangeAdaptationPolicies/out")
+write.csv(df_ipcc_long, "df_ipcc_long.csv", row.names = FALSE)
+
+## cross-tabulated matrix of counts
+ipcc_counts <- ipcc_sum[, c("legbodyCODE", "n_BehavCult", "n_Knowl", "n_InfrTech", "n_NatBased", "n_Inst")]
+ipcc_counts
+ncats <- dim(ipcc_counts)[2]
+nstates <- dim(ipcc_counts)
+
+## create ippc.dat object (column 1 = legbodyCODE, column 2 = IPCC_category, column 3 = count)
+ipcc.dat <- data.frame(legbodyCODE = rep(ippc_counts$legbodyCODE, each = ncats-1),
+                    IPCC_category = rep(c("behav-cult", "knowl", "infra-tech", "nature-based", "inst"), times = nrow(ipcc_counts)),
+                    count = c(as.numeric(ippc_counts[1,2:ncats]), as.numeric(ippc_counts[2,2:ncats]),
+                    as.numeric(ippc_counts[3,2:ncats]), as.numeric(ippc_counts[4,2:ncats]),
+                    as.numeric(ippc_counts[5,2:ncats]), as.numeric(ippc_counts[6,2:ncats]),
+                    as.numeric(ippc_counts[7,2:ncats]), as.numeric(ippc_counts[8,2:ncats])))
+ipcc.dat
+
+## create cross-tabulated matrix of counts
+ipcc_xtabs <- xtabs(count ~ legbodyCODE + IPCC_category, data = ipcc.dat)
+summary(xtabs(count ~ legbodyCODE + IPCC_category, data = ipcc.dat))
+
+## simulate permutation test for independence based on the sum of Pearson residuals
+## calculate expected cell counts
+rowTotals <- rowSums(ipcc_xtabs)
+colTotals <- colSums(ipcc_xtabs)
+nOfCases <- sum(rowTotals)
+expected <- outer(rowTotals, colTotals, "*") / nOfCases
+expected
+
+## calculate observed sums of squared residuals
+obsSumSqResid <- sum((ipcc_xtabs - expected) ^ 2 / expected)
+obsSumSqResid
+
+## as an example, generate 3 tables of simulated cell counts given the marginal totals
+r2dtable(n = 3, r = rowTotals, c = colTotals)
+
+## create function to calculate Pearson residuals, then simulate iter possible n-dimensional tables given
+## marginal totals, and determine how extreme is the observed statistic relative to the simulated distribution
+sumSqResid <- function(x) sum((x - expected)^2 / expected)
+
+Pcat <- as.numeric(colTotals/nOfCases)
+iter <- 100000
+simSumSqResid <- numeric(length = iter)
+ran.colTotals <- matrix(NA, nrow = iter, ncol = ncats-1)
+for(i in 1:iter) {
+  r1 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[1], prob = Pcat))
+  r2 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[2], prob = Pcat))
+  r3 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[3], prob = Pcat))
+  r4 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[4], prob = Pcat))
+  r5 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[5], prob = Pcat))
+  r6 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[6], prob = Pcat))
+  r7 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[7], prob = Pcat))
+  r8 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[8], prob = Pcat))
+  ran.colTotals[i, ] <- colSums(rbind(r1, r2, r3, r4, r5, r6, r7, r8))
+  simSumSqResid[i] <- sapply(r2dtable(n = 1, r = rowTotals, c = ran.colTotals[i, ]), sumSqResid)
+}
+sum(simSumSqResid >= sumSqResid(ipcc_xtabs)) / iter # type I error of the simulated statistics ≥ observed statistic
+
 
 ## plot
 ggplot(df_ippc_long, aes(x = legbodyCODE, y = p, fill = IPCC_category)) +
@@ -274,11 +334,12 @@ ggplot(total_ippc_long, aes(x = reorder(IPCC_category, -p), y = p, fill = IPCC_c
   theme_minimal() +
   theme(legend.position = "none")
 
+setwd("/Users/brad0317/Documents/GitHub/ClimateChangeAdaptationPolicies/out")
+write.csv(total_ippc_long, "total_ippc_long.csv", row.names = FALSE)
 
 
 ##################################
 ## summary by hazard
-
 ## columns about hazard
 hazard_colnames <- colnames(data)[grepl("^Hazard_", colnames(data))]
 hazard_colnames
@@ -313,6 +374,63 @@ haz_sum
 haz_sum <- subset(haz_sum, legbodyCODE != "")
 haz_sum
 
+## cross-tabulated matrix of counts
+haz_counts <- haz_sum[, c("legbodyCODE", "n_fire", "n_flood", "n_tmpprcphum", "n_wind", "n_drought", "n_gen")]
+haz_counts
+ncats <- dim(haz_counts)[2]
+nstates <- dim(haz_counts)
+
+## create haz.dat object (column 1 = legbodyCODE, column 2 = haz_category, column 3 = count)
+haz.dat <- data.frame(legbodyCODE = rep(haz_counts$legbodyCODE, each = ncats-1),
+                       haz_category = rep(c("fire", "flood", "tmpprcphum", "wind", "drought", "gen"), times = nrow(haz_counts)),
+                       count = c(as.numeric(haz_counts[1,2:ncats]), as.numeric(haz_counts[2,2:ncats]),
+                                 as.numeric(haz_counts[3,2:ncats]), as.numeric(haz_counts[4,2:ncats]),
+                                 as.numeric(haz_counts[5,2:ncats]), as.numeric(haz_counts[6,2:ncats]),
+                                 as.numeric(haz_counts[7,2:ncats]), as.numeric(haz_counts[8,2:ncats])))
+haz.dat
+
+## create cross-tabulated matrix of counts
+haz_xtabs <- xtabs(count ~ legbodyCODE + haz_category, data = haz.dat)
+summary(xtabs(count ~ legbodyCODE + haz_category, data = haz.dat))
+
+## simulate permutation test for independence based on the sum of Pearson residuals
+## calculate expected cell counts
+rowTotals <- rowSums(haz_xtabs)
+colTotals <- colSums(haz_xtabs)
+nOfCases <- sum(rowTotals)
+expected <- outer(rowTotals, colTotals, "*") / nOfCases
+expected
+
+## calculate observed sums of squared residuals
+obsSumSqResid <- sum((haz_xtabs - expected) ^ 2 / expected)
+obsSumSqResid
+
+## as an example, generate 3 tables of simulated cell counts given the marginal totals
+r2dtable(n = 3, r = rowTotals, c = colTotals)
+
+## create function to calculate Pearson residuals, then simulate iter possible n-dimensional tables given
+## marginal totals, and determine how extreme is the observed statistic relative to the simulated distribution
+sumSqResid <- function(x) sum((x - expected)^2 / expected)
+
+Pcat <- as.numeric(colTotals/nOfCases)
+iter <- 100000
+simSumSqResid <- numeric(length = iter)
+ran.colTotals <- matrix(NA, nrow = iter, ncol = ncats-1)
+for(i in 1:iter) {
+  r1 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[1], prob = Pcat))
+  r2 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[2], prob = Pcat))
+  r3 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[3], prob = Pcat))
+  r4 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[4], prob = Pcat))
+  r5 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[5], prob = Pcat))
+  r6 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[6], prob = Pcat))
+  r7 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[7], prob = Pcat))
+  r8 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[8], prob = Pcat))
+  ran.colTotals[i, ] <- colSums(rbind(r1, r2, r3, r4, r5, r6, r7, r8))
+  simSumSqResid[i] <- sapply(r2dtable(n = 1, r = rowTotals, c = ran.colTotals[i, ]), sumSqResid)
+}
+sum(simSumSqResid >= sumSqResid(haz_xtabs)) / iter # type I error of the simulated statistics ≥ observed statistic
+
+
 ## pivot counts
 df_haz_long <- haz_sum %>%
   pivot_longer(
@@ -330,6 +448,9 @@ df_haz_long <- haz_sum %>%
                     p_gen = "general")
   )
 df_haz_long
+
+setwd("/Users/brad0317/Documents/GitHub/ClimateChangeAdaptationPolicies/out")
+write.csv(df_haz_long, "df_haz_long.csv", row.names = FALSE)
 
 ## plot
 ggplot(df_haz_long, aes(x = legbodyCODE, y = p, fill = hazard)) +
@@ -439,6 +560,62 @@ risk_sum <- data %>%
                              ifelse(is.na(n_multi), 0, n_multi / sum(n_infrastr,n_health,n_nature,n_primprod,n_regions,n_economy,n_defence,n_multi))))
 risk_sum
 
+## cross-tabulated matrix of counts
+risk_counts <- risk_sum[, c("legbodyCODE", "n_infrastr", "n_health", "n_nature", "n_primprod", "n_regions", "n_economy", "n_defence", "n_multi")]
+risk_counts
+ncats <- dim(risk_counts)[2]
+nstates <- dim(risk_counts)
+
+## create risk.dat object (column 1 = legbodyCODE, column 2 = risk_category, column 3 = count)
+risk.dat <- data.frame(legbodyCODE = rep(risk_counts$legbodyCODE, each = ncats-1),
+                      risk_category = rep(c("infra", "health", "nature", "primprod", "regions", "econ", "defence", "multi"), times = nrow(risk_counts)),
+                      count = c(as.numeric(risk_counts[1,2:ncats]), as.numeric(risk_counts[2,2:ncats]),
+                                as.numeric(risk_counts[3,2:ncats]), as.numeric(risk_counts[4,2:ncats]),
+                                as.numeric(risk_counts[5,2:ncats]), as.numeric(risk_counts[6,2:ncats]),
+                                as.numeric(risk_counts[7,2:ncats]), as.numeric(risk_counts[8,2:ncats])))
+risk.dat
+
+## create cross-tabulated matrix of counts
+risk_xtabs <- xtabs(count ~ legbodyCODE + risk_category, data = risk.dat)
+summary(xtabs(count ~ legbodyCODE + risk_category, data = risk.dat))
+
+## simulate permutation test for independence based on the sum of Pearson residuals
+## calculate expected cell counts
+rowTotals <- rowSums(risk_xtabs)
+colTotals <- colSums(risk_xtabs)
+nOfCases <- sum(rowTotals)
+expected <- outer(rowTotals, colTotals, "*") / nOfCases
+expected
+
+## calculate observed sums of squared residuals
+obsSumSqResid <- sum((risk_xtabs - expected) ^ 2 / expected)
+obsSumSqResid
+
+## as an example, generate 3 tables of simulated cell counts given the marginal totals
+r2dtable(n = 3, r = rowTotals, c = colTotals)
+
+## create function to calculate Pearson residuals, then simulate iter possible n-dimensional tables given
+## marginal totals, and determine how extreme is the observed statistic relative to the simulated distribution
+sumSqResid <- function(x) sum((x - expected)^2 / expected)
+
+Pcat <- as.numeric(colTotals/nOfCases)
+iter <- 100000
+simSumSqResid <- numeric(length = iter)
+ran.colTotals <- matrix(NA, nrow = iter, ncol = ncats-1)
+for(i in 1:iter) {
+  r1 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[1], prob = Pcat))
+  r2 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[2], prob = Pcat))
+  r3 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[3], prob = Pcat))
+  r4 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[4], prob = Pcat))
+  r5 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[5], prob = Pcat))
+  r6 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[6], prob = Pcat))
+  r7 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[7], prob = Pcat))
+  r8 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[8], prob = Pcat))
+  ran.colTotals[i, ] <- colSums(rbind(r1, r2, r3, r4, r5, r6, r7, r8))
+  simSumSqResid[i] <- sapply(r2dtable(n = 1, r = rowTotals, c = ran.colTotals[i, ]), sumSqResid)
+}
+sum(simSumSqResid >= sumSqResid(risk_xtabs)) / iter # type I error of the simulated statistics ≥ observed statistic
+
 ## pivot counts
 df_risk_long <- risk_sum %>%
   pivot_longer(
@@ -478,6 +655,10 @@ ggplot(df_risk_long, aes(x = legbodyCODE, y = p, fill = risk_category)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 0, hjust = 1),
         legend.position = "top")
+
+setwd("/Users/brad0317/Documents/GitHub/ClimateChangeAdaptationPolicies/out")
+write.csv(df_risk_long, "df_risk_long.csv", row.names = FALSE)
+
 
 ## summarise across all states/territories
 total_risk <- data %>%
@@ -592,6 +773,63 @@ purpose_sum <- data %>%
                                     ifelse(is.na(n_intervention), 0 ,n_intervention / sum(n_governance,n_research,n_coordination,n_intervention))))
 purpose_sum
 
+## cross-tabulated matrix of counts
+purpose_counts <- purpose_sum[, c("legbodyCODE", "n_governance", "n_research", "n_coordination", "n_intervention")]
+purpose_counts
+ncats <- dim(purpose_counts)[2]
+nstates <- dim(purpose_counts)
+
+## create purpose.dat object (column 1 = legbodyCODE, column 2 = purpose_category, column 3 = count)
+purpose.dat <- data.frame(legbodyCODE = rep(purpose_counts$legbodyCODE, each = ncats-1),
+                       purpose_category = rep(c("gov", "res", "coord", "interv"), times = nrow(purpose_counts)),
+                       count = c(as.numeric(purpose_counts[1,2:ncats]), as.numeric(purpose_counts[2,2:ncats]),
+                                 as.numeric(purpose_counts[3,2:ncats]), as.numeric(purpose_counts[4,2:ncats]),
+                                 as.numeric(purpose_counts[5,2:ncats]), as.numeric(purpose_counts[6,2:ncats]),
+                                 as.numeric(purpose_counts[7,2:ncats]), as.numeric(purpose_counts[8,2:ncats])))
+purpose.dat
+
+## create cross-tabulated matrix of counts
+purpose_xtabs <- xtabs(count ~ legbodyCODE + purpose_category, data = purpose.dat)
+summary(xtabs(count ~ legbodyCODE + purpose_category, data = purpose.dat))
+
+## simulate permutation test for independence based on the sum of Pearson residuals
+## calculate expected cell counts
+rowTotals <- rowSums(purpose_xtabs)
+colTotals <- colSums(purpose_xtabs)
+nOfCases <- sum(rowTotals)
+expected <- outer(rowTotals, colTotals, "*") / nOfCases
+expected
+
+## calculate observed sums of squared residuals
+obsSumSqResid <- sum((purpose_xtabs - expected) ^ 2 / expected)
+obsSumSqResid
+
+## as an example, generate 3 tables of simulated cell counts given the marginal totals
+r2dtable(n = 3, r = rowTotals, c = colTotals)
+
+## create function to calculate Pearson residuals, then simulate iter possible n-dimensional tables given
+## marginal totals, and determine how extreme is the observed statistic relative to the simulated distribution
+sumSqResid <- function(x) sum((x - expected)^2 / expected)
+
+Pcat <- as.numeric(colTotals/nOfCases)
+iter <- 100000
+simSumSqResid <- numeric(length = iter)
+ran.colTotals <- matrix(NA, nrow = iter, ncol = ncats-1)
+for(i in 1:iter) {
+  r1 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[1], prob = Pcat))
+  r2 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[2], prob = Pcat))
+  r3 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[3], prob = Pcat))
+  r4 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[4], prob = Pcat))
+  r5 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[5], prob = Pcat))
+  r6 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[6], prob = Pcat))
+  r7 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[7], prob = Pcat))
+  r8 <- as.vector(rmultinom(1, size=as.vector(rowTotals)[8], prob = Pcat))
+  ran.colTotals[i, ] <- colSums(rbind(r1, r2, r3, r4, r5, r6, r7, r8))
+  simSumSqResid[i] <- sapply(r2dtable(n = 1, r = rowTotals, c = ran.colTotals[i, ]), sumSqResid)
+}
+sum(simSumSqResid >= sumSqResid(purpose_xtabs)) / iter # type I error of the simulated statistics ≥ observed statistic
+
+
 ## pivot counts
 df_purpose_long <- purpose_sum %>%
   pivot_longer(
@@ -623,6 +861,10 @@ ggplot(df_purpose_long, aes(x = legbodyCODE, y = p, fill = purpose_category)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 0, hjust = 1),
         legend.position = "top")
+
+setwd("/Users/brad0317/Documents/GitHub/ClimateChangeAdaptationPolicies/out")
+write.csv(purpose_sum, "purpose_sum.csv", row.names = FALSE)
+
 
 ## summarise across all states/territories
 total_purpose <- data %>%
@@ -702,11 +944,22 @@ head(data_years)
 colnames(data_years)
 data_years$year
 
+colnames(data_years)
+
 ## count number of records per year
 year_sum <- data_years %>%
   group_by(year) %>%
   summarise(n = n())
 tail(year_sum)
+
+## cumulative number of records per year
+year_cumsum <- year_sum %>%
+  arrange(year) %>%
+  mutate(cumsum_n = cumsum(n))
+
+setwd("/Users/brad0317/Documents/GitHub/ClimateChangeAdaptationPolicies/out")
+write.csv(year_sum, "year_sum.csv", row.names = FALSE)
+write.csv(year_cumsum, "year_cumsum.csv", row.names = FALSE)
 
 ## identify peak year
 peak_year <- year_sum$year[which.max(year_sum$n)]
@@ -718,6 +971,23 @@ recyr_plot <- ggplot(year_sum, aes(x = year, y = n)) +
   geom_vline(xintercept = 2026, linetype = "dashed", color = "red") +
   labs(x = "year", y = "number of records") +
   theme_minimal()
+
+# create summary of number of records per year per state, ordered by state, then year
+year_sum_state <- data_years %>%
+  group_by(legbodyCODE, year) %>%
+  summarise(n = n()) %>%
+  arrange(legbodyCODE, year)
+
+## create summary cumulative number of records per year per state, ordered by state, then year
+year_cumsum_state <- year_sum_state %>%
+  group_by(legbodyCODE) %>%
+  arrange(legbodyCODE, year) %>%
+  mutate(cumsum_n = cumsum(n))
+
+
+setwd("/Users/brad0317/Documents/GitHub/ClimateChangeAdaptationPolicies/out")
+write.csv(year_sum_state, "year_sum_state.csv", row.names = FALSE)
+write.csv(year_cumsum_state, "year_cumsum_state.csv", row.names = FALSE)
 
 ## plot cumulative records by year
 cumrecyr_plot <- ggplot(year_sum, aes(x = year, y = cumsum(n))) +
@@ -768,14 +1038,93 @@ ggplot(state_sum_pop_income, aes(x = medEarn22, y = nrecXpop)) +
   labs(x = "median income 2021-2022", y = "number of records / million people") +
   theme_minimal() +
   geom_text_repel(aes(label = legbodyCODE), size = 4, box.padding = 0.5, point.padding = 0.5)
+linreg.ER(y=state_sum_pop_income$nrecXpop, x=state_sum_pop_income$medEarn22)
+
+## plot nrec by population size
+ggplot(state_sum_pop_income, aes(x = pop, y = n)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_smooth(method = "lm") +
+  labs(x = "population size", y = "number of records") +
+  theme_minimal() +
+  geom_text_repel(aes(label = legbodyCODE), size = 4, box.padding = 0.5, point.padding = 0.5)
+linreg.ER(y=log10(state_sum_pop_income$n), x=log10(state_sum_pop_income$pop))
+
+## plot income by population size
+ggplot(state_sum_pop_income, aes(x = pop, y = medEarn22)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10() +
+  geom_smooth(method = "lm") +
+  labs(x = "population size", y = "median income 2021-2022") +  
+  theme_minimal() +
+  geom_text_repel(aes(label = legbodyCODE), size = 4, box.padding = 0.5, point.padding = 0.5)
+linreg.ER(y=log10(state_sum_pop_income$medEarn22), x=log10(state_sum_pop_income$pop))
 
 ## plot nrec by medEarn22
 ggplot(state_sum_pop_income, aes(x = medEarn22, y = n)) +
   geom_point() +
+  scale_y_log10() +
+  scale_x_log10() +
   geom_smooth(method = "lm") +
   labs(x = "median income 2021-2022", y = "number of records") +
   theme_minimal() +
   geom_text_repel(aes(label = legbodyCODE), size = 4, box.padding = 0.5, point.padding = 0.5)
+linreg.ER(y=log10(state_sum_pop_income$n), x=log10(state_sum_pop_income$medEarn22))
+
+## export data
+state_sum_pop_income$ln <- log10(state_sum_pop_income$n)
+state_sum_pop_income$lpop <- log10(state_sum_pop_income$pop)
+state_sum_pop_income$lmedEarn22 <- log10(state_sum_pop_income$medEarn22)
+state_sum_pop_income$lnrecXpop <- log10(state_sum_pop_income$nrecXpop)
+state_sum_pop_income
+
+setwd("~/Documents/GitHub/ClimateChangeAdaptationPolicies/out/")
+write.csv(state_sum_pop_income, "state_sum_pop_income.csv", row.names = FALSE)
+
+state_sum_pop_income
+## multivariate lm for nrec ~ pop + medEarn22
+mod1 <- "ln ~ lpop + lmedEarn22"
+mod2 <- "ln ~ lpop"
+mod3 <- "ln ~ lmedEarn22"
+mod4 <- "ln ~ 1"
+
+## model vector
+mod.vec <- c(mod1,mod2,mod3,mod4)
+length(mod.vec)
+length(unique(mod.vec))
+
+## define n.mod
+n.mod <- length(mod.vec)
+
+# model fitting and logLik output loop
+Modnum <- length(mod.vec)
+LL.vec <- SaveCount <- AICc.vec <- BIC.vec <- k.vec <- terml <- Rm <- Rc <- rep(0,Modnum)
+mod.list <- summ.fit <- coeffs <- coeffs.se <- term.labs <- coeffs.st <- list()
+mod.num <- seq(1,Modnum,1)
+
+for(i in 1:Modnum) {
+  fit <- glm(as.formula(mod.vec[i]),family=gaussian(link="identity"), data=state_sum_pop_income, na.action=na.omit)
+  assign(paste("fit",i,sep=""), fit)
+  mod.list[[i]] <- fit
+  print(i)
+}
+
+sumtable <- aicW(mod.list, finite = TRUE, null.model = NULL, order = F)
+row.names(sumtable) <- mod.vec
+summary.table <- sumtable[order(sumtable[,5],decreasing=T),]
+summary.table
+
+## saturated residual diagnostic
+i <- 2
+fit <- glm(as.formula(mod.vec[i]),family=gaussian(link="identity"), data=state_sum_pop_income, na.action=na.omit)
+
+check_model(fit, detrend=F)
+plot_model(fit, show.values=T, vline.color = "purple")
+
+
+
 
 ## SA4 income
 sa4_income <- income_data[which(is.na(income_data$SA4CODE)==F),]
