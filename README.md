@@ -17,6 +17,10 @@ Dr <a href="https://www.flinders.edu.au/people/altaf.virani">Altaf Virani</a><br
 <a href="http://flinders.edu.au" target="_blank">Flinders University</a>, Adelaide, Australia <br>
 <a href=mailto:altaf.virani@flinders.edu.au>e-mail</a> <br>
 <br>
+Accompanies paper:<br>
+<br>
+King, M, A Virani, CJA Bradshaw. Assessing climate-adaptation policies across Australian states and territories (in preparation)
+<br>
 
 ## <a href="https://github.com/cjabradshaw/ClimateChangeAdaptationPolicies/tree/main/scripts">Scripts</a>
 - <code>CAP.R</code> (main code)
